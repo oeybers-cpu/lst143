@@ -1,0 +1,302 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Anonymous Peer Evaluation</title>
+  <style>
+    :root{--bg:#0b1020;--card:#121a33;--ink:#eef2ff;--muted:#93a0c7;--accent:#a1c4fd;--ok:#c3f0ca;--err:#ffd1d1}
+    html,body{height:100%}
+    body{margin:0;background:linear-gradient(180deg,var(--bg),#0e1530);color:var(--ink);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif}
+    .wrap{max-width:940px;margin:0 auto;padding:24px}
+    .card{background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.08);border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.25);padding:20px}
+    h1{font-size:clamp(20px,4vw,28px);margin:0 0 12px}
+    h2{font-size:18px;margin:18px 0 8px;color:var(--accent)}
+    p,li,label{color:var(--muted)}
+    select,textarea,button{width:100%;padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.15);background:#0f1731;color:var(--ink)}
+    textarea{min-height:72px}
+    button{cursor:pointer;font-weight:600}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .row-3{display:grid;grid-template-columns:2fr 1fr 1.2fr;gap:10px;align-items:center}
+    .pill{display:inline-block;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);padding:6px 10px;border-radius:999px;font-size:12px;color:var(--muted)}
+    .table{border-collapse:separate;border-spacing:0 10px;width:100%}
+    .table th{font-weight:600;text-align:left;color:var(--ink);font-size:14px}
+    .table td,.table th{padding:8px 10px}
+    .rowcard{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px}
+    .help{font-size:12px;margin-top:6px}
+    .ok{background:var(--ok);color:#0b4417;border:none}
+    .err{background:var(--err);color:#5a0000;border:none}
+    .muted{color:var(--muted)}
+    .hidden{display:none}
+    .footer{margin-top:20px;font-size:12px;color:var(--muted)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Anonymous Peer Evaluation</h1>
+      <p class="muted">Choose your group, select <em>your own name</em> (only used locally to hide you from the list), then rate each teammate’s contribution. Your identity is <strong>not</strong> sent.</p>
+
+      <div class="row">
+        <div>
+          <label for="group">Your group</label>
+          <select id="group" required></select>
+          <div class="help">If you pick the wrong group, the names won’t match. Please double‑check.</div>
+        </div>
+        <div>
+          <label for="selfName">Your name (for hiding yourself only)</label>
+          <select id="selfName"></select>
+          <div class="help">Not submitted. Used only to exclude your name from rating.</div>
+        </div>
+      </div>
+
+      <div id="ratingsBlock" class="hidden">
+        <h2>Rate your teammates</h2>
+        <table class="table" id="ratingsTable" aria-describedby="ratingsHelp">
+          <thead>
+            <tr>
+              <th>Peer</th>
+              <th>Contribution (1–5)</th>
+              <th>Comment (optional)</th>
+            </tr>
+          </thead>
+          <tbody id="ratingsBody"></tbody>
+        </table>
+        <div id="ratingsHelp" class="help">Use 1 = minimal contribution, 3 = adequate, 5 = outstanding. Be fair and professional.</div>
+        <div class="footer">
+          <span class="pill">Anonymous</span>
+          <span class="pill">One submission per student</span>
+        </div>
+        <div style="margin-top:14px" class="row">
+          <button id="submitBtn">Submit</button>
+          <button id="resetBtn" type="button">Reset</button>
+        </div>
+        <div id="status" class="help" role="status" aria-live="polite" style="margin-top:10px"></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <h2>How we protect anonymity</h2>
+      <ul>
+        <li>No sign‑in required; email is not collected.</li>
+        <li>Your chosen name is <strong>not</strong> sent to the server; it only hides you from the list locally.</li>
+        <li>The server stores: timestamp, group, peer rated, score, comment (optional).</li>
+      </ul>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <h2>Configuration</h2>
+      <p class="help">Update the endpoint and roster below, then publish this file.</p>
+      <code class="pill">const GAS_ENDPOINT = "https://script.google.com/macros/s/YOUR_WEB_APP_ID/exec";</code>
+    </div>
+  </div>
+
+  <script>
+    // 1) Set this to your Google Apps Script Web App URL (NO TRAILING SPACES)
+    const GAS_ENDPOINT = "https://script.google.com/macros/s/YOUR_WEB_APP_ID/exec";
+
+    // 2) Paste your roster here. Example with a few groups — extend to 50.
+    const ROSTER = {
+      "Group 1": ["Alice Mokoena","Bongani Sithole","Carmen Naidoo","Dylan Jacobs","Ellen Maseko"],
+      "Group 2": ["Farai Dube","Gugu Mbatha","Hendrik Botha","Ivy Phiri","Jabu Mthembu"],
+      "Group 3": ["Karin van der Merwe","Lebo Khumalo","Mandla Sibanda","Nadia Coetzee","Oupa Molefe"],
+      // Add more groups as needed...
+    };
+
+    // ============ UI & Logic ============
+    const groupSel = document.getElementById('group');
+    const selfSel  = document.getElementById('selfName');
+    const ratingsBlock = document.getElementById('ratingsBlock');
+    const ratingsBody  = document.getElementById('ratingsBody');
+    const submitBtn = document.getElementById('submitBtn');
+    const resetBtn  = document.getElementById('resetBtn');
+    const statusEl  = document.getElementById('status');
+
+    // populate groups
+    function initGroups(){
+      groupSel.innerHTML = '<option value="" disabled selected>Select your group…</option>' +
+        Object.keys(ROSTER).map(g=>`<option value="${g}">${g}</option>`).join('');
+      selfSel.innerHTML = '<option value="" disabled selected>Select your name…</option>';
+    }
+
+    // populate names when group changes
+    groupSel.addEventListener('change', ()=>{
+      const group = groupSel.value;
+      const names = ROSTER[group] || [];
+      selfSel.innerHTML = '<option value="" disabled selected>Select your name…</option>' +
+        names.map(n=>`<option value="${n}">${n}</option>`).join('');
+      buildRatings();
+      ratingsBlock.classList.toggle('hidden', names.length === 0);
+    });
+
+    // rebuild ratings list excluding self
+    selfSel.addEventListener('change', buildRatings);
+
+    function buildRatings(){
+      const group = groupSel.value;
+      const self  = selfSel.value;
+      const names = (ROSTER[group]||[]).filter(n=>!self || n!==self);
+      ratingsBody.innerHTML = '';
+      names.forEach(name=>{
+        const tr = document.createElement('tr');
+        tr.className = 'rowcard';
+        tr.innerHTML = `
+          <td>${name}</td>
+          <td>
+            <select name="score" data-peer="${name}" required>
+              <option value="" disabled selected>Select 1–5</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+            </select>
+          </td>
+          <td>
+            <textarea name="comment" data-peer="${name}" placeholder="Optional, concise justification"></textarea>
+          </td>`;
+        ratingsBody.appendChild(tr);
+      });
+    }
+
+    // collect & validate payload
+    function collectPayload(){
+      const group = groupSel.value;
+      if(!group) throw new Error('Please select your group.');
+
+      const selects = ratingsBody.querySelectorAll('select[name="score"]');
+      const ratings = [];
+      for(const sel of selects){
+        const peer = sel.getAttribute('data-peer');
+        const score = sel.value;
+        const comment = ratingsBody.querySelector(`textarea[data-peer="${CSS.escape(peer)}"]`).value.trim();
+        if(!score) throw new Error('Please score every peer (1–5).');
+        ratings.push({peer, score:Number(score), comment});
+      }
+      return {group, ratings};
+    }
+
+    function setStatus(msg,type=''){
+      statusEl.textContent = msg;
+      statusEl.className = 'help ' + (type==='ok'?'ok': type==='err'?'err':'');
+    }
+
+    // submit handler
+    submitBtn.addEventListener('click', async ()=>{
+      setStatus('Submitting…');
+      submitBtn.disabled = true;
+      try{
+        const payload = collectPayload();
+        const res = await fetch(GAS_ENDPOINT, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(payload)
+        });
+        if(!res.ok) throw new Error(`Server error: ${res.status} ${res.statusText}`);
+        const data = await res.json();
+        if(data.ok) {
+          setStatus('Thank you — your peer ratings were submitted anonymously.', 'ok');
+          // lock form
+          submitBtn.disabled = true;
+          groupSel.disabled = true;
+          selfSel.disabled = true;
+          ratingsBody.querySelectorAll('select,textarea').forEach(el=>el.disabled=true);
+        } else {
+          throw new Error(data.error || 'Submission failed');
+        }
+      }catch(err){
+        setStatus(err.message || 'Submission failed. Please try again.', 'err');
+        submitBtn.disabled = false;
+      }
+    });
+
+    resetBtn.addEventListener('click', ()=>{
+      groupSel.disabled = false; selfSel.disabled=false; submitBtn.disabled=false;
+      groupSel.selectedIndex = 0; selfSel.selectedIndex = 0; ratingsBody.innerHTML='';
+      ratingsBlock.classList.add('hidden'); setStatus('');
+    });
+
+    // init
+    initGroups();
+  </script>
+</body>
+</html>
+
+<!-- =================== GOOGLE APPS SCRIPT (Code.gs) ===================
+Create a new Google Apps Script project → Services: SpreadsheetApp
+Create a Google Sheet and copy its ID. Paste into SHEET_ID below.
+Deploy → New Deployment → Type: Web app → Execute as: Me → Who has access: Anyone with the link
+Copy the Web App URL and paste into GAS_ENDPOINT in the HTML above.
+
+STEPS TO USE:
+1. Create new Google Sheet
+2. Copy Sheet ID from URL (between /d/ and /edit)
+3. Paste Sheet ID into Code.gs SHEET_ID
+4. Deploy as Web App (Execute as Me, Anyone with link)
+5. Copy Web App URL and paste into HTML's GAS_ENDPOINT
+6. Share Google Sheet with "Anyone with link can view" for downloadability
+-->
+
+function doPost(e) {
+  try {
+    const origin = e?.headers?.origin || '*';
+    const payload = JSON.parse(e.postData.contents);
+    const { group, ratings } = payload || {};
+    
+    if (!group || !Array.isArray(ratings)) {
+      return _resp({ ok: false, error: 'Invalid payload' }, origin, 400);
+    }
+
+    const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME);
+    if (!sheet) {
+      throw new Error(`Sheet "${SHEET_NAME}" not found`);
+    }
+
+    // Initialize header if empty
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(['timestamp', 'group', 'peer', 'score', 'comment']);
+    }
+
+    const now = new Date();
+    const rows = [];
+    ratings.forEach(r => {
+      const score = Number(r.score);
+      if (score < 1 || score > 5) return; // Skip invalid scores
+      rows.push([
+        now,
+        group,
+        r.peer,
+        score,
+        r.comment?.toString() || ''
+      ]);
+    });
+
+    if (rows.length > 0) {
+      sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 5).setValues(rows);
+    }
+
+    return _resp({ ok: true, saved: rows.length }, origin);
+  } catch (err) {
+    console.error('Error:', err);
+    return _resp({ ok: false, error: err.message }, '*', 500);
+  }
+}
+
+function _resp(obj, origin = '*', code = 200) {
+  const response = ContentService.createTextOutput(JSON.stringify(obj));
+  response.setMimeType(ContentService.MimeType.JSON);
+  response.setStatusCode(code);
+  response.setHeader("Access-Control-Allow-Origin", origin);
+  response.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  response.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  return response;
+}
+
+function doOptions(e) {
+  return _resp({ ok: true }, '*', 200);
+}
+
+// CONFIGURATION - REPLACE THESE VALUES
+const SHEET_ID = 'YOUR_SHEET_ID_HERE'; // e.g., '1zjoKT4YYkZfhZeoLTvJnr-gVflpknYsgCPkbivHOwUI'
+const SHEET_NAME = 'Peer Eval';
