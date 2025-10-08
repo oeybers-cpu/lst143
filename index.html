@@ -4,6 +4,8 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Anonymous Peer Evaluation</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
   <style>
     :root {
       --bg: #0b1020;
@@ -184,19 +186,6 @@
       flex-wrap: wrap;
     }
     
-    .code-block {
-      background: var(--card);
-      padding: 16px;
-      border-radius: var(--radius);
-      font-family: "Fira Code", monospace;
-      font-size: 14px;
-      color: var(--accent);
-      margin-top: 12px;
-      overflow-x: auto;
-      white-space: pre-wrap;
-      line-height: 1.5;
-    }
-    
     .status {
       margin-top: 16px;
       padding: 12px;
@@ -221,7 +210,7 @@
   <div class="wrap">
     <div class="card">
       <h1>Anonymous Peer Evaluation</h1>
-      <p class="muted">Complete this form to evaluate your teammates. Your identity is never shared - only the ratings are recorded.</p>
+      <p class="muted">Complete this form to evaluate your teammates. Your identity is never shared - all processing happens in your browser.</p>
 
       <div class="row">
         <div>
@@ -255,12 +244,12 @@
         <div class="help">Scale: 1 = Minimal, 3 = Adequate, 5 = Outstanding. Be professional and fair.</div>
         
         <div class="footer">
-          <span class="pill">Anonymous</span>
-          <span class="pill">One submission per student</span>
+          <span class="pill">100% Local Processing</span>
+          <span class="pill">No Data Sent to Servers</span>
         </div>
         
         <div style="margin-top: 20px; display: flex; gap: 12px;">
-          <button id="submitBtn" class="ok">Submit Ratings</button>
+          <button id="submitBtn" class="ok">Download PDF Report</button>
           <button id="resetBtn">Reset Form</button>
         </div>
         
@@ -272,41 +261,26 @@
       <h2>How We Protect Anonymity</h2>
       <ul>
         <li>No sign-in required - no email or personal data collected</li>
-        <li>Your chosen name is never sent to the server - only used locally</li>
-        <li>Server stores: timestamp, group, peer rated, score, and optional comment</li>
-        <li>All data is stored in a secure Google Sheet with restricted access</li>
+        <li>Your chosen name is never sent to any server - only used locally</li>
+        <li>All data is processed in your browser and downloaded as PDF</li>
+        <li>No data is stored on any server - completely private</li>
       </ul>
     </div>
 
     <div class="card">
-      <h2>Setup Instructions</h2>
-      <p class="help">To configure this tool, follow these steps:</p>
-      <div class="code-block">
-// 1. Create new Google Sheet and copy its ID from URL<br>
-// 2. Replace SHEET_ID below with your sheet ID<br>
-// 3. Deploy as Web App (Execute as Me, Anyone with link)<br>
-// 4. Copy Web App URL and replace GAS_ENDPOINT below<br>
-// 5. Update ROSTER with your actual group names<br>
-<br>
-const SHEET_ID = "YOUR_SHEET_ID_HERE";<br>
-const SHEET_NAME = "Peer Eval";<br>
-<br>
-const GAS_ENDPOINT = "https://script.google.com/macros/s/YOUR_WEB_APP_ID/exec";<br>
-<br>
-const ROSTER = {<br>
-  "Group 1": ["Alice Mokoena","Bongani Sithole","Carmen Naidoo"],<br>
-  "Group 2": ["Farai Dube","Gugu Mbatha","Hendrik Botha"],<br>
-  // Add more groups as needed<br>
-};<br>
-      </div>
+      <h2>How to Use</h2>
+      <p class="help">This tool generates a PDF of your peer evaluations directly in your browser:</p>
+      <ol>
+        <li>Select your group and your name</li>
+        <li>Rate each teammate using the scale: 1 (Minimal), 3 (Adequate), 5 (Outstanding)</li>
+        <li>Add optional comments for each rating</li>
+        <li>Click "Download PDF Report" to save the evaluation</li>
+      </ol>
     </div>
   </div>
 
   <script>
-    // 1) Set this to your Google Apps Script Web App URL (NO TRAILING SPACES)
-    const GAS_ENDPOINT = "https://script.google.com/macros/s/YOUR_WEB_APP_ID/exec";
-
-    // 2) Paste your roster here. Example with a few groups — extend to 50.
+    // Roster data - customize with your actual groups
     const ROSTER = {
       "Group 1": ["Alice Mokoena", "Bongani Sithole", "Carmen Naidoo", "Dylan Jacobs", "Ellen Maseko"],
       "Group 2": ["Farai Dube", "Gugu Mbatha", "Hendrik Botha", "Ivy Phiri", "Jabu Mthembu"],
@@ -398,33 +372,53 @@ const ROSTER = {<br>
       statusEl.className = 'status ' + (type === 'ok' ? 'ok' : type === 'err' ? 'err' : '');
     }
 
-    // submit handler
-    submitBtn.addEventListener('click', async () => {
-      setStatus('Submitting…', 'ok');
+    // PDF generation handler
+    submitBtn.addEventListener('click', () => {
+      setStatus('Generating PDF...', 'ok');
       submitBtn.disabled = true;
       try {
         const payload = collectPayload();
-        const res = await fetch(GAS_ENDPOINT, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+        
+        // Create PDF
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        
+        // Add title and header
+        doc.setFontSize(18);
+        doc.text("Peer Evaluation Report", 10, 15);
+        doc.setFontSize(12);
+        doc.text(`Group: ${payload.group}`, 10, 25);
+        doc.text(`Date: ${new Date().toLocaleDateString()}`, 10, 30);
+        
+        // Create table
+        const headers = ["Peer", "Score", "Comment"];
+        const data = payload.ratings.map(r => [r.peer, r.score, r.comment || ""]);
+        
+        doc.autoTable({
+          head: [headers],
+          body: data,
+          startY: 40,
+          styles: { fontSize: 10, cellPadding: 5 },
+          headStyles: { fillColor: [50, 80, 150], textColor: [255, 255, 255] },
+          columnStyles: {
+            0: { cellWidth: 80 },
+            1: { cellWidth: 30 },
+            2: { cellWidth: 'auto' }
+          },
+          margin: { top: 40 }
         });
         
-        if (!res.ok) throw new Error(`Server error: ${res.status} ${res.statusText}`);
-        const data = await res.json();
+        // Save PDF
+        doc.save(`peer-evaluation-${payload.group}.pdf`);
         
-        if (data.ok) {
-          setStatus(`Success! ${data.saved} ratings submitted anonymously.`, 'ok');
-          // lock form
-          submitBtn.disabled = true;
-          groupSel.disabled = true;
-          selfSel.disabled = true;
-          ratingsBody.querySelectorAll('select,textarea').forEach(el => el.disabled = true);
-        } else {
-          throw new Error(data.error || 'Submission failed');
-        }
+        setStatus('PDF downloaded successfully!', 'ok');
+        // Lock form
+        submitBtn.disabled = true;
+        groupSel.disabled = true;
+        selfSel.disabled = true;
+        ratingsBody.querySelectorAll('select,textarea').forEach(el => el.disabled = true);
       } catch (err) {
-        setStatus(err.message || 'Submission failed. Please try again.', 'err');
+        setStatus(err.message || 'PDF generation failed. Please try again.', 'err');
         submitBtn.disabled = false;
       }
     });
